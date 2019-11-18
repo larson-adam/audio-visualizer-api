@@ -182,6 +182,8 @@ HRESULT MatchPin(IPin *pPin, PIN_DIRECTION direction, BOOL bShouldBeConnected, B
 	return hr;
 }
 
+
+
 // Return the first unconnected input pin or output pin.
 HRESULT FindUnconnectedPin(IBaseFilter *pFilter, PIN_DIRECTION PinDir, IPin **ppPin)
 {
@@ -256,6 +258,61 @@ HRESULT ConnectFilters(IGraphBuilder *pGraph, IBaseFilter *pSrc, IBaseFilter *pD
 	return hr;
 }
 
+void TearDownGraph()
+{
+	// Stop sending event messages
+	if (m_pEvent)
+	{
+		m_pEvent->SetNotifyWindow((OAHWND)NULL, NULL, NULL);
+	}
+
+	SafeRelease(&m_pGraph);
+	SafeRelease(&m_pControl);
+	SafeRelease(&m_pEvent);
+
+	delete m_pVideo;
+	m_pVideo = NULL;
+
+	m_state = STATE_NO_GRAPH;
+}
+
+HRESULT InitializeGraph()
+{
+	TearDownGraph();
+
+	// Create the Filter Graph Manager.
+	HRESULT hr = CoCreateInstance(CLSID_FilterGraph, NULL,
+		CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_pGraph));
+	if (FAILED(hr))
+	{
+		goto done;
+	}
+
+	hr = m_pGraph->QueryInterface(IID_PPV_ARGS(&m_pControl));
+	if (FAILED(hr))
+	{
+		goto done;
+	}
+
+	hr = m_pGraph->QueryInterface(IID_PPV_ARGS(&m_pEvent));
+	if (FAILED(hr))
+	{
+		goto done;
+	}
+
+	// Set up event notification.
+	/*hr = m_pEvent->SetNotifyWindow((OAHWND)m_hwnd, WM_GRAPH_EVENT, NULL);
+	if (FAILED(hr))
+	{
+		goto done;
+	}
+
+	m_state = STATE_STOPPED;*/
+
+done:
+	return hr;
+}
+
 int main()
 {
 	HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
@@ -282,6 +339,12 @@ int main()
 	IFileSinkFilter *pSink = NULL;
 	IGraphBuilder *pGraph;
 
+	HRESULT hr = InitializeGraph();
+	if (FAILED(hr))
+	{
+		goto done;
+	}
+
 	// Create the Filter Graph Manager.
 	hr = CoCreateInstance(CLSID_FilterGraph, NULL, CLSCTX_INPROC_SERVER,
 		IID_IGraphBuilder, (void**)&pGraph);
@@ -293,23 +356,27 @@ int main()
 	IEnumMoniker *pEnum;
 	EnumerateDevices(CLSID_AudioInputDeviceCategory, &pEnum);
 
-	// Add the audio capture filter to the filter graph. 
-	hr = pGraph->AddFilter(pSrc, L"Capture");
+	if (pGraph != nullptr)
+	{
+		// Add the audio capture filter to the filter graph. 
+		hr = pGraph->AddFilter(pSrc, L"virtual-audio-capturer");
 
-	// Add the WavDest and the File Writer.
-	//hr = AddFilterByCLSID(pGraph, CLSID_WavDest, L"WavDest", &pWaveDest);
-	//hr = AddFilterByCLSID(pGraph, CLSID_FileWriter, L"File Writer", &pWriter);
+		// Add the WavDest and the File Writer.
+		//hr = AddFilterByCLSID(pGraph, CLSID_WavDest, L"WavDest", &pWaveDest);
+		//hr = AddFilterByCLSID(pGraph, CLSID_FileWriter, L"File Writer", &pWriter);
 
-	// Set the file name.
-	hr = pWriter->QueryInterface(IID_IFileSinkF  ilter, (void**)&pSink);
-	hr = pSink->SetFileName(L"C:\\MyWavFile.wav", NULL);
+		// Set the file name.
+		//hr = pWriter->QueryInterface(IID_IFileSinkF  ilter, (void**)&pSink);
+		//hr = pSink->SetFileName(L"C:\\MyWavFile.wav", NULL);
 
-	// Connect the filters.
-	hr = ConnectFilters(pGraph, pSrc, pWaveDest);
-	hr = ConnectFilters(pGraph, pWaveDest, pWriter);
+		// Connect the filters.
+		hr = ConnectFilters(pGraph, pSrc, pWaveDest);
+		hr = ConnectFilters(pGraph, pWaveDest, pWriter);
+	}
+	
 
 	// Not shown: Release interface pointers.
-
+done:
 	system("PAUSE");
 	return 1;
 }
